@@ -11,10 +11,14 @@ module E = struct
 end
 
 module Ty = struct
+  type extensibility =
+    | Open
+    | Closed
+
   type t =
     | Bool
     | Int
-    | Record of prop StrMap.t
+    | Record of prop StrMap.t * extensibility
 
   and prop =
     | OptProp of t
@@ -45,7 +49,7 @@ let rec subtype t1 t2 =
   | Ty.Bool, _ -> Some (Mismatch { expected = t1; got = t2 })
   | Ty.Int, Ty.Int -> None
   | Ty.Int, _ -> Some (Mismatch { expected = t1; got = t2 })
-  | Ty.Record props1, Ty.Record props2 -> record_subtype props1 props2
+  | Ty.Record (props1, _), Ty.Record (props2, _) -> record_subtype props1 props2
   | Ty.Record _, _ -> Some (Mismatch { expected = t1; got = t2 })
 
 and record_subtype props1 props2 =
@@ -80,7 +84,7 @@ let rec elab = function
   | E.Int _ -> Ty.Int
   | E.Record e_props ->
     let t_props = StrMap.map (fun e -> Ty.ReqProp (elab e)) e_props in
-    Ty.Record t_props
+    Ty.Record (t_props, Ty.Closed)
 ;;
 
 (* display *)
@@ -88,13 +92,16 @@ let rec elab = function
 let rec string_of_ty = function
   | Ty.Bool -> "bool"
   | Ty.Int -> "int"
-  | Ty.Record props ->
+  | Ty.Record (props, extensibility) ->
     let folder k v str =
       match v with
       | Ty.ReqProp ty -> Printf.sprintf "%s %s <~ %s; " str k (string_of_ty ty)
       | Ty.OptProp ty -> Printf.sprintf "%s %s <~? %s; " str k (string_of_ty ty)
     in
-    StrMap.fold folder props "[" ^ "]"
+    let (lbrace, rbrace) = match extensibility with
+      | Ty.Open -> ("[", "]")
+      | Ty.Closed -> ("[|", "|]") in
+    StrMap.fold folder props lbrace ^ rbrace
 ;;
 
 let rec string_of_e = function
@@ -149,7 +156,7 @@ let record_ty props =
         if is_required then k, Ty.ReqProp v else k, Ty.OptProp v)
       props
   in
-  Ty.Record (StrMap.of_seq (List.to_seq props))
+  Ty.Record (StrMap.of_seq (List.to_seq props), Ty.Closed)
 ;;
 
 let assignability_example e_props ty_props =
